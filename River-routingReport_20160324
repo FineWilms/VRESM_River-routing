@@ -1,0 +1,449 @@
+\documentclass[a4paper,10pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{bm}
+\usepackage{graphicx}
+\usepackage{cite}
+\usepackage{geometry}
+\usepackage{natbib}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{subcaption}
+\geometry{margin=1in}
+\numberwithin{equation}{subsection}
+
+\title{Progress report for river-routing development in C-CAM}
+\author{J.M. Wilms}
+
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+% Ice cores from Greenland provide us with a detailed record of climate stretching over a hundred thousand years.  It shows that for most of its recent history the Earth has lurched violently between periods of warmth and severe cold.  The last big glaciation occurred twelve thousand years ago.  Towards its end, Earth warmed rapidly, but then suddenly cooled severely for approximately a thousand years in an event called the Younger Dryas.  After which the Earth warmed by four degrees over a period of two decades.  Greenland ice cores show the temperatures there changing by as much as 8 degrees Celsius in ten years, drastically altering rainfall patterns and growing conditions.  
+% \\\\
+% Although the phenomena which brought on such sudden changes in Earth's temperatures are still unknown, climate scientist theorize that the heavy inflow of meltwater to the seas at the beginning of the Younger Dryas reduced the salinity of northern oceans, causing the Gulf stream to veer southwards. In the absence of the Gulf stream's warming influences, the northern latitudes returned to icy conditions \cite{Bry05}. 
+% \\\\
+River water inflow to the World Ocean is the most important component of the global hydrological cycle, providing a vital exchange between the ocean water and water of the continents.
+\\\\
+% 
+% Some river runoff formed within the continents in the endorheic regions does not reach the ocean and is completely lost to evaporation and different human needs. These regions occupy about 30 million $km^2$ (20\% of the total land area of the Earth);  only about 2.4\% (1000 $km^3/year$) of the total annual river runoff are formed within this territory.  Most endorheic areas are deserts and semi-deserts with low precipitation.  The largest endorheic areas are in Asia and Africa (12.3 and 9.6 million $km^2$, respectively).
+% 
+% Not all rivers discharge to the ocean directly.  Many rivers, large river systems included, discharge to lakes with fresh or salt water, situated very far from the World Ocean.  
+% 
+% Most lakes which receive river runoff are exorheic, i.e. they are connected with the World Ocean through the rivers discharging from these lakes.  This runoff volume is included into the water inflow to the oceans from each continent.
+% 
+% If rivers discharge to endorheic or closed water bodies (lake or sea) that are not connected with the ocean, this whole portion of runoff is lost to evaporation and change in water volume.  
+% The effect of glacial meltwater and river runoff to the World Ocean is an important component of the global hydrological cycle, providing the vast majority of the water exchange between water of the continents and oceanic water.  Water evaporates from the ocean surface, falls onto the land surface as precipitation and its greater portion outflows back to seas and oceans through river systems.  
+% \\ \\
+Fresh water in rivers greatly differs from saline seawater in its physical and chemical properties.  Mixed with seawater, the fresh water affects the general scheme of oceanic motion of water masses.  Even a relatively small volume of fresh water causes a degree of desalination in the top layer;  this spreads over the ocean surface over long distances and can greatly affect physical, chemical, and dynamic processes in seas and oceans (\cite{Shi09}).
+\\\\
+The aim of our section of the VRESM project is to understand the underlying physics of how water will move from the continents to the ocean and to use this understanding to model the route that the water takes and thus predict not only the amount of freshwater reaching oceans, but also the locations at which such outflow will occur.  
+% \\\\
+% \cite{Shi09} has shown that the dynamics of long-term variations of total runoff to the World ocean is steady.  There is, however, an evident trend towards inflow decrease to the Indian and Pacific Oceans and towards inflow increase to the Atlantic Ocean.
+\\\\
+As a starting point our group has focused on a river-routing model, based on the work of \cite{Mil93}.  This model has been built into the Conformal-Cubic Atmospheric Model (C-CAM), developed at CSIRO, Australia.  During the past few months we have tried to understand not only how the river-routing works but also how it fits into the greater C-CAM model.
+\\\\
+C-CAM differs from other climate models, which are based on a regular latitude-longitude configuration:  It uses a grid derived from a gnomic projection of the cube onto the sphere.  In the following section the geometry of the C-CAM grid and essential grid transformations are briefly described.  This description is based on the work of \cite{McG05}.
+\\\\
+A discussion of the river-routing scheme is given.  This is based on email correspondence with \cite{Tha16} as well as inspection and experimentation with the C-CAM source code.  Results obtained from  a spin-up simulation for the year 2000 are shown and discussed.  The report is concluded with some general remarks on the spin-up procedure and possible different modelling methods which may yield more accurate routing results.
+
+\section{The geometry of the C-CAM grid}
+
+C-CAM is formulated on a quasi-uniform grid, derived by projecting the panels of a cube onto the surface of the Earth.  With the exception of the eight singular vertices (i.e. the corners of the projected cube) the conformal cubic grid is isotropic.
+\\\\
+Let the racius of the Earth be denoted by $R$ and let $(X,Y,Z)$ be the physical 3D Cartesian coordinates on the sphere with $Z$ directed upwards through panel 1, normal to Earth's surface as shown in Fig. \ref{fig:ccam_cube}.  Equations of motion are written in terms of 2D panel coordinates $(x,y,p)$ where $p$ is the panel number.  Note that $(x,y)$ still refer to the sphere.  Since a cube has six faces, it follows that $0\leq p \leq 5$ and since four panels will encompass the sphere the $x$ and $y$ values on each of the six panels $0\leq x\mbox{ or } y \leq \pi R/2  $.  It follows that the average model grid resolution is given by
+\begin{equation}
+ \Delta x \equiv \Delta y = 2\pi R/(4N)\label{eq:delxy}
+\end{equation}
+From Eq. \ref{eq:delxy} it follows that a C48 grid has a quasi uniform resolution of 208km, since it contains 48x48 grid points on each panel.
+\begin{figure}[h]
+ \centering
+  \includegraphics[scale=0.25]{./cube.png}
+ \caption{Layout of panels on cube.}
+ \label{fig:ccam_cube}
+\end{figure}
+\\
+On each panel the $x$-values are given by $x_1 = \pi R/4N$, $x_2=3\pi R/4N$, ..., $x_N=(2N-1)\pi R/(4N)$ with corresponding values for $y$.  Each of the aforementioned $x$ (and $y$) points has a map factor $m$ associated with it.  The physical spacing between grid points is $\Delta x/m$.  These map factors vary from point to point. 
+\\\\
+C-CAM can be stretched if a higher resolution is desired.  However, If we use an unstretched grid, the map factors on any panel are equal to those in the corresponding position of any other panel.  The unstretched physical grid values on the sphere are related to the stretched factors $(X',Y',Z')$ by means of the Schmidt transformation.
+\\\\
+The Schmidt transformation converts any orthogonal grid system on the sphere to a stretched version of the same grid.  The Schmidt magnification factor is denoted by $S$.  For $S=1$, the grid is unstretched, whereas higher values of $S$ will result in a higher resolution over panel 1.  
+\\\\
+The ($X,Y,Z$) coordinate system is centred on panel 1.  At the centre of the panel, the $Z$-coordinate is directed upwards while $X$ and $Y$ are directed south and east respectively.
+% The Schmidt ransformation transforms these Cartesian coordinate values and map factors as follows:
+% 
+% \begin{eqnarray}
+%   X &=& \frac{1+\alpha}{1+\alpha Z'/R}\frac{X'}{S}\\
+%   Y &=& \frac{1+\alpha}{1+\alpha Z'/R}\frac{Y'}{S}\\
+%   Z &=& \frac{\alpha R+Z'}{1+\alpha Z'/R}\\
+% \end{eqnarray}
+The $(x,y, p)$ values are unaffected by the Schmidt transformation, but the associated map factors are altered according to
+\begin{equation}
+ m=\frac{1+\alpha Z'/R}{1-\alpha}\frac{m'}{S}.\label{eq:mtom}
+\end{equation}
+At the centre of panel 1, Z=Z'=R, Eq.\ref{eq:mtom} reduces to $m=Sm'$, verifying that the grid resolution on the $(X,Y,Z)$-coordinates is magnified there by a factor $S$ compared to the $(X',Y',Z')$ coordinates.
+
+The transformations from the physical $(X,Y,Z)$ coordinates to the quasi-regular stretched $(X',Y',Z')$ are given by
+
+\begin{eqnarray}
+  X' &=& \frac{1-\alpha}{1-\alpha Z/R}SX\\
+  Y' &=& \frac{1-\alpha}{1-\alpha Z/R}SY\\
+  Z' &=& \frac{Z-\alpha R}{1-\alpha Z/R}.\\
+\end{eqnarray}
+where
+\begin{equation}
+ \alpha = \frac{S^2-1}{S^2+1} %\mbox{latloij.f90}.
+\end{equation}
+However, in the current applications, the grid remains unstretched and it follows that $S=1$ and $(X',Y',Z')=(X,Y,Z)$.
+\\\\
+Gnomonic projections (radially towards the centre of the Earth) are performed between the surface of the Earth and the panels of the cube.  Let $(A,B,C)$ denote 3D Cartesian coordinates on the cube with $A$, $B$, and $C$ pointing outwards through panels 0,2, and 1 respectively and let $(a,b,p)$ be 2D Cartesian on the panels of the cube as shown in Fig. \ref{fig:ccam_cube}.
+Each of these $a$ and $b$ coordinate values can range between $-R$ and $R$, whereas  $0<p<5$.  Each panel edge has $N$ segments and each panel contains $N\times N$ four-sided elements.  The $(x,y)$ coordinates, mentioned earlier, are coordinates on the sphere and are orthogonal, whereas the projected $(a,b)$ coordinate lines on the faces of the cube are not orthogonal.
+\\\\
+It follows that each C-CAM grid point has an associated $(X,Y,Z)$ value and an associated $(X',Y',Z')$ value, and that projection onto the cube has an associated $(A,B,C)$ value which corresponds to $(a,b,p)$ values.
+% map factors, grid spacing and tangent vectors:
+% Denoting the Cartesian position vector on the sphere by $r\equiv(X,Y,Z)$, grid distances between adjacent grid points are calculated as
+% \begin{equation}
+%  \left(\frac{\Delta x}{m}\right)_{i+1/2,j}=|r_{i+1,j}-r_{i,j}|\left(1+\frac{|r_{i+1,j}-r_{i,j}|^2}{24}\right)
+% \end{equation}
+% The term in brackets is a correction for the curvature of the Earth.  The final map factors at each grid point are evaluated by averaging the neighbour distances as follows:
+% \begin{equation}
+%  \left(\frac{\Delta x}{m}\right)_{i,j}=
+%  \left\{\left(\frac{\Delta x}{m}\right)_{i-1/2,j}+\left(\frac{\Delta x}{m}\right)_{i+1/2,j}+\left(\frac{\Delta x}{m}\right)_{i/j-1/2}+\left(\frac{\Delta x}{m}\right)_{i/j+1/2}\right\},
+% \end{equation}
+% remembering that $\Delta x$ and $\Delta y$ are equal and satisfy Eq. \ref{eq:delxy}.
+\subsection{Grid transformations}
+\subsubsection{$(X,Y,Z)$ on sphere to $(A,B,C)$ on cube}
+\begin{equation}
+ (A,B,C)=\frac{(X,Y,Z)}{max(|X|,|Y|,|Z|)}R.
+\end{equation}
+\begin{equation}
+ (X,Y,Z)=\frac{(A,B,C)}{(A^2+B^2+C^2)^{1/2}}R.
+\end{equation}
+\subsubsection{$(A,B,C)$ on cube to $(a,b,p)$ on cube}
+\begin{eqnarray}
+\mbox{if }  A=R  &\mbox{then}&   p=0 ,  a=B ,  b=C \nonumber \\
+\mbox{if }  A=-R  &\mbox{then}& p=3 ,  a=-C ,  b=-B \nonumber \\
+\mbox{if }  B=R  &\mbox{then}& p=2 ,  a=-C ,  b=-A \nonumber\\
+\mbox{if }  B=-R  &\mbox{then}& p=5 ,  a=A ,  b=C \nonumber\\
+\mbox{if }  C=R  &\mbox{then}& p=1 ,  a=B ,  b=-A \nonumber\\
+\mbox{if }  C=-R  &\mbox{then}& p=4 ,  a=A ,  b=-B. 
+\end{eqnarray}
+It can be verified by inspection that the following alternative equations produce equivalent results, but avoid the branching computations.  The panel index, $p$, is then given by,
+\begin{equation}
+ p = max\left[A_{int}(3A_{int-3}), B_{int}(7B_{int}-3),C_{int}(5C_{int}-3)\right]/2,
+\end{equation}
+where
+\begin{eqnarray}
+ A_{int}&=&int\left(\frac{A}{R}\right)\nonumber\\
+ B_{int}&=&int\left(\frac{B}{R}\right)\nonumber\\
+ C_{int}&=&int\left(\frac{C}{R}\right)
+\end{eqnarray}
+and $int(I)$ is the truncated integer value.  
+The Cartesian coordinate position $(a,b,p)$ on a panel of the cube is then
+\begin{eqnarray}
+ a&=&E_{p1}A+E_{p2}B+E_{p3}C\\
+ b&=&F_{p1}A+F_{p2}B+F_{p3}C
+\end{eqnarray}
+where the nonzero members of matrices $E$ and $F$ are given by
+\begin{eqnarray}
+  E_{02}=E_{12}=-E_{23}=-E_{33}=E_{41}=E_{51}\nonumber\\
+   =F_{03}=-F_{11}=-F_{21}=-F_{32}=-F_{42}=F_{53}=1.
+\end{eqnarray}
+\subsubsection{$(a,b,p)$ on cube to $(A,B,C)$ on cube}
+\[ \begin{array}{lllr}
+ A=R& B=a & C=b & \mbox{for } p=0 \\
+ A=-b& B=a & C=R & \mbox{for } p=1 \\
+ A=-b& B=R & C=-a & \mbox{for } p=2\\
+ A=R& B=-b & C=-a & \mbox{for } p=3\\
+ A=a& B=-b & C=-R & \mbox{for } p=4\\
+ A=a& B=-R & C=b & \mbox{for } p=5\\
+ \end{array}\] 
+\subsubsection{$X,Y,Z$ on sphere to/from longitude-latitude}
+Denote longitude by $\gamma$ and latitude by $\rho$ in polar coordinates.  Denote unrotated Cartesian coordinates by $(\tilde{X},\tilde{Y},\tilde{Z})$ with $\tilde{Z}$ passing through the Norh pole and $\tilde{X}$ passing through the Equator at the Greenwich meridian.  These can be converted to and from polar coordinates by
+
+\begin{figure}[h]
+ \centering
+  \includegraphics[scale=0.2]{./latlon2XYZ.png}
+ \caption{Conversion between lat-lon and Cartesian coordinates.}
+ \label{fig:latlon2xyz}
+\end{figure}
+\begin{eqnarray}
+ \tilde{X} &=& R\cos\phi\cos\gamma\\%\mbox{latloij.f90}\\
+ \tilde{Y}&=&R\cos\phi\sin\gamma\\%\mbox{latloij.f90}\\
+ \tilde{Z}&=&R\sin\phi\\%\mbox{latloij.f90}
+\end{eqnarray}
+It also follows that
+\begin{eqnarray}
+\gamma&=&\tan^{-1}\frac{\tilde{Y}}{\tilde{X}}\\
+\phi&=&\sin^{-1} \frac{\tilde{Z}}{R}
+\end{eqnarray}
+The CCAM grid is, however, set up so that the Cartesian grid is located at $(\gamma_0,\phi_0)$ for $(X,Y,Z) = (0,0,R)$.  The $X$-axis lies in a negative direction along $\gamma=\gamma_0$ and the $Y$-axis lies along $\phi=\phi_0$.  The coordinate rotation corresponds to rotating ($\tilde{X}$,$\tilde{Y}$,$\tilde{Z}$) by $\gamma_0$ and then by $-\phi_0$.  The rotated and non-rotated coordinates are related by
+\begin{eqnarray}
+\tilde{X}&=&\cos\gamma_0\sin\phi_0 X-\sin\gamma_0 Y+\cos\gamma_0\cos\phi_0 Z,\\% \mbox{setxyz.f90 utilities.f90}\\
+\tilde{Y}&=&\sin\gamma_0\sin\phi_0 X+\cos\gamma_0 Y+\sin\gamma_0\cos\phi_0 Z,\\%\mbox{setxyz.f90 utilities.f90}\\
+\tilde{Z}&=&-\cos\phi_0 X+ sin\phi_0 Z %\mbox{setxyz.f90 and utilities.f90}
+\end{eqnarray}
+The Grid setup and rotations are calculated in C-CAM's $utilities.f90$, $setxyz.f90$, and $latloij.f90$.
+
+\section{Grid decomposition for parallel processing}
+Face decomposition is used to decompose the grid.  This methods keeps the cube faces together where possible; for example with 6 processors each gets a complete face.  The computational domain is divided into a number of subdomains equal to the number or processors. 
+\\\\
+% If the computational domain is mapped using a mesh with NX*NY*NZ grid nodes, and a three dimensional array with px*py*pz processors is used, then the number of grid nodes assigned to each processor will be Nx/px*NY/py*NZ/pz.  It is assumed that NX,NY and Nz are multiples of px, py and pz, respectively.  This avoids load balancing problems caused by different computational load in different processors, but does not restrict the genereality of the parallelization strategy. 
+Each processor performs calculations for a subdomain.  Although the subdomains do not overlap, there is a buffer of halo points added to their boundaries, including the virtual boundaries, i.e. boundaries between neighbouring processors.  
+% A plane of halo points is added to each subdomin boundary to simplify the exchange of data at the virtual boundaries between neighbouring processors.
+The bounds subroutine updates the grid halo information with adjacent MPI processes/CPUs.
+\section{River-routing module in C-CAM}
+All the river routing is in C-CAM's $river.f90$.  The main prognostic array is $watbdy(:)$, which is the amount of water $(kg/m^2)$ in a grid box.  The scheme calculates the slope based on the surface geopotential, $zs$, where
+\begin{eqnarray}
+  zs&=&z*g,
+\end{eqnarray}
+and $z$ is the orography, whereas gravity is denoted by $g$.  The surface height output of C-CAM is shown in Fig. \ref{fig:ccam_zs}.
+\begin{figure}[h]
+ \centering
+  \includegraphics[scale=0.4]{./zs.png}
+ \caption{Surface height,$z$}
+ \label{fig:ccam_zs}
+\end{figure}
+The slope, $i$, calculation is adjusted using $Z_{adj}$, based on the water-body height, so that water attempts to equilibrate with the water level in adjacent grid boxes:
+\begin{eqnarray}
+  i &=& \frac{Z_C+Z_{C,adj}-(Z_{N}+Z_{N,adj})}{r_{CN}}.\label{eq:slope_i}
+\end{eqnarray}
+In Eq. \ref{eq:slope_i}, $r_{CN}$ denotes the shortest distance between two points on the sphere and is given by \cite{Mat} as
+\begin{eqnarray}
+  r_{CN}&=&cos^{-1}\left(\bm{C}\cdot \bm{N}\right),
+\end{eqnarray}
+where $\bm{C}$ and $\bm{N}$ are the $(X,Y,Z)$ coordinates, normalised by Earth's radius, $R$.
+However, the result is that water cannot build-up in a single grid point because eventually it flows back out of the grid point.  In this way, the C-CAM code is more of a flood model than a river model.
+\begin{figure}[h]
+ \centering
+  \includegraphics[scale=0.25]{./neigbours2.png}
+ \caption{Centre Cell and its neighbours.}
+ \label{fig:ccam_nb}
+\end{figure}
+Here $C$ refers to the cell from which the slope is calculated.  This slope calculation is repeated for each of cell $C$'s eight neighbours, shown in Fig. \ref{fig:ccam_nb}.  
+\\\\
+Once the slope is calculated, the downhill velocity (outflow) and uphill velocity (inflow) is calculated, using an expression given by \cite{Mil93}
+\begin{eqnarray}
+ \bm{u}&=&0.35\left(\frac{i}{i_0}\right),
+\end{eqnarray}
+where $i_0=0.00005$ is the reference topography gradient.
+% The grid is split over various MPI processes/CPUs and, therefore, calculations are based on what is updated by a particular grid point since grid points, that do not belong to the current process (or CPU) can not be updated.
+\\\\
+The downhill velocity and uphill velocities are used to estimate a flux for incoming and outgoing water and the new water level, $newbdy$, is updated.
+\\\\ 
+To prevent overshoot and oscillations, $Z_{adj}$ is recalculated, using $newbdy$:
+\begin{eqnarray}
+Zadj = \frac{1}{\rho} \frac{1}{2} (newwat + watbdy)\label{eq:Zadj},
+\end{eqnarray}
+where $newwat$ is the estimate of the water depth at $time=t+1$, whereas the $watbdy$ is the water depth at time=$t$.  The factor of a half, on the right of Eq. \ref{eq:Zadj}, serves to average the water depth between time=$t$ and time=$t+1$ and $\rho$ is the density of water.
+\\\\
+The flux calculation is then repeated.  This forms a predictor/corrector loop where an estimate of the water flow is used for the initial calculation and the process is repeated with improved fluxes.  This predictor/correction loop is only required because $Z_{adj}$ depends on the water level.
+\\\\ 
+The last stage is to handle basins where water flows in to a land grid box from all sides.  This is problematic since the water needs to be removed.  Some groups spread the ‘trapped’ water over the oceans, but that requires communications will all CPUs which would limit the speed that C-CAM can run at on high CPU counts (e.g., 10,000+).  So, instead, in C-CAM, the trapped water is removed by adding the water back to the land-surface model as soil moisture.  This option is activated by setting the switch $basinmd=0$ in the run script.  The land surface model hydrology cannot really handle this because the soil column is only 4 $m$ deep, but at least the water can evaporate.  Because of the $Z_{adj}$, the trapped water will eventually fill the basin and start being trapped in adjacent grid boxes, which increases the area that water can evaporate from.  There are other basinmd options for simply storing the water in the trapped basin forever ($basinmd=1$) or allowing water to ‘leak’ into the soil at all grid boxes instead of just basins ($basinmd=2$).
+% The water can also be removed in sflux.f90 (surface fluxes) which hands back water to the mlo.f90 (single column ocean physics).  Anyway, the code estimates if any land points surrounding a water point are below the lake level, then the lake is allowed to outflow back onto the land.  Otherwise water will flow into a lake and be removed from the river routing.
+\section{Model spin-up}
+The water-body variable, $watbdy$ is zero for the very first month.  It could be initialised with something else if data is available.  Currently, the model spins up the rivers as it runs.  However, C-CAM will save $watbdy$ in the Restart file at the end of each month, so the data is not lost.  The water body value, $watbdy$ is loaded from the restart file in $onthefly.f90$ and saved to the restart file in $outcdf.f90$.  It follows that, if the initial month is modified to contain some $watbdy$ data, the model could be initialised with non-zero values.
+\\\\
+Model spin-up is an adjustment process where its internal stores move from an initial state of unusual conditions to one of equilibrium.  Model outputs during this spin-up process are often unrealistic and misleading.  It is therefore crucial that the model be initialised with an adequate spin-up time simulation. 
+\\\\
+The $watbdy$ output is given by C-CAM as {\it{surface water}} in the variable $swater$.  For a spin-up run the year 2000 was chosen.  The results for January 2000 to December 2000 are shown in Fig. \ref{fig:swater}.  Runoff results are shown in Fig. \ref{fig:runoff} and the average and maximum levels for the first day of each month are shown in Fig. \ref{fig:spinup_wl} and \ref{fig:spinup_runoff}
+\begin{figure}[h!]
+\centering
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{swater200001.png}
+  \caption{January 2000.}
+  \label{fig:sub1}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{swater200002.png}
+  \caption{February 2000.}
+  \label{fig:sub2}
+\end{subfigure}
+\\
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{swater200003.png}
+  \caption{March 2000.}
+  \label{fig:sub1}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{swater200004.png}
+  \caption{April 2000.}
+  \label{fig:sub2}
+\end{subfigure}
+\\\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{swater200005.png}
+  \caption{May 2000.}
+  \label{fig:sub1}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{swater200006.png}
+  \caption{June 2000.}
+  \label{fig:sub2}
+\end{subfigure}
+\\\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{swater200007.png}
+  \caption{July 2000.}
+  \label{fig:sub1}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{swater200008.png}
+  \caption{August 2000.}
+  \label{fig:sub2}
+\end{subfigure}
+\caption{Surface water height in $mm$ for spin-up run during 2000.}
+\label{fig:swater}
+\end{figure}
+
+\begin{figure}[h!]
+\ContinuedFloat
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{swater200009.png}
+  \caption{September 2000.}
+  \label{fig:sub1}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{swater200010.png}
+  \caption{October 2000.}
+  \label{fig:sub2}
+\end{subfigure}
+\\
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{swater200011.png}
+  \caption{November 2000.}
+  \label{fig:sub1}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{swater200012.png}
+  \caption{December 2000.}
+  \label{fig:sub2}
+\end{subfigure}
+\caption{Surface water height in $mm$ for spin-up run during 2000.}
+\label{fig:swater}
+\end{figure}
+
+
+\begin{figure}[h!]
+\centering
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{runoff200001.png}
+  \caption{January 2000.}
+  \label{fig:sub1}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{runoff200002.png}
+  \caption{February 2000.}
+  \label{fig:sub2}
+\end{subfigure}
+\\
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{runoff200003.png}
+  \caption{March 2000.}
+  \label{fig:sub1}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{runoff200004.png}
+  \caption{April 2000.}
+  \label{fig:sub2}
+\end{subfigure}
+\\\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{runoff200005.png}
+  \caption{May 2000.}
+  \label{fig:sub1}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{runoff200006.png}
+  \caption{June 2000.}
+  \label{fig:sub2}
+\end{subfigure}
+\\\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{runoff200007.png}
+  \caption{July 2000.}
+  \label{fig:sub1}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{runoff200008.png}
+  \caption{August 2000.}
+  \label{fig:sub2}
+\end{subfigure}
+\caption{Surface water height in $mm$ for spin-up run during 2000.}
+\label{fig:runoff}
+\end{figure}
+
+\begin{figure}[h!]
+\ContinuedFloat
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{runoff200009.png}
+  \caption{September 2000.}
+  \label{fig:sub1}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{runoff200010.png}
+  \caption{October 2000.}
+  \label{fig:sub2}
+\end{subfigure}
+\\
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{runoff200011.png}
+  \caption{November 2000.}
+  \label{fig:sub1}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=1.\linewidth]{runoff200012.png}
+  \caption{December 2000.}
+  \label{fig:sub2}
+\end{subfigure}
+\caption{Runoff velocity in $mm/day$ for spin-up run during 2000.}
+\label{fig:runoff}
+\end{figure}
+
+\begin{figure}[h]
+ \centering
+  \includegraphics[scale=0.25]{./spinup_waterlevel.png}
+ \caption{Surface water height average-- and maximum values.}
+ \label{fig:spinup_wl}
+\end{figure}
+
+\begin{figure}[h]
+ \centering
+  \includegraphics[scale=0.25]{./spinup_runoff.png}
+ \caption{runoff speed average-- and maximum values.}
+ \label{fig:spinup_runoff}
+\end{figure}
+\section{Conclusion}
+From Fig.'s \ref{fig:spinup_wl} and \ref{fig:spinup_runoff}, it appears as though the spin-up time needs to be increased for a stable input scenario to be obtained.  Also, according to \cite{Shi09}, the total annual water inflow from rivers to the World Ocean was 39 530 $km^3/year$ on average for the period 1921 to 1985.  More than half of this amount (20 190 $km^3$) was discharged to the Atlantic ocean;  the least water inflow occurs to the Arctic and Indian oceans (4280 km and 4530 km, respectively).  About 40\% of global river runoff to the ocean occurs within the equatorial zone, between 10$^{\circ}$N and 10$^{\circ}$S.  Freshwater runoff from the territory of Antarctica as icebergs and melt water equals 2310 $km^3$/year.  
+\\\\
+From Fig. \ref{fig:spinup_runoff}, it appears that the simulation results fall well below \cite{Shi09}'s measured values.
+\\\\
+The river-routing scheme differs from traditional river routing schemes in that there may exist multiple outflows from a grid box.  Sub-grid orography has not been accounted for because the scheme was intended for finer grid spacing. That information could be estimated in a pre-processing step and fed as a new input into the model at a later stage.
+\\\\ 
+Meandering terms that slow down the water movement over a grid box have not been factored in.  The water could also be localised within a grid box as the river usually occupies a small area fraction of the grid box.  Finally, evaporation of the river could be estimated if water temperature was tracked, although that is not really done by the current generation of river routing schemes in GCMs.
+
+\bibliography{RR}
+\bibliographystyle{plainnat}
+\end{document}          
